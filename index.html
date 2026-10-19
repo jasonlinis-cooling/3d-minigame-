@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Eco-Sorter Minigames</title>
+<link rel="preconnect" href="https://cdnjs.cloudflare.com">
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; font-family: "Trebuchet MS", sans-serif; background: #000; }
+  canvas { display: block; }
+  #overlay {
+    position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(10, 40, 20, 0.88); color: #fff; text-align: center; z-index: 10;
+  }
+  #overlay h1 { font-size: 60px; margin: 0 0 6px; letter-spacing: 6px; color: #7CFC9A; }
+  #overlay p { margin: 6px 0 14px; font-size: 20px; max-width: 560px; }
+  .btn {
+    display: block; width: 330px; margin: 8px; padding: 16px 20px; font-size: 22px; font-weight: bold; cursor: pointer;
+    border: none; border-radius: 12px; color: #fff; font-family: inherit;
+  }
+  .btn:hover { filter: brightness(1.15); transform: scale(1.03); }
+  #b1 { background: #2e9e4f; } #b2 { background: #2878d6; } #b3 { background: #d68a28; } #bjoin { background: #00897b; } #bres { background: #8e44ad; }
+  .row { margin: 6px; font-size: 17px; }
+  .row input { font-size: 17px; padding: 6px 10px; border-radius: 8px; border: none; width: 140px; text-align: center; }
+  .sm { padding: 8px 14px; margin: 3px; border-radius: 8px; border: 2px solid #fff6; background: #0006; color: #fff; font-size: 15px; cursor: pointer; font-family: inherit; }
+  .sm.on { background: #2e9e4f; border-color: #fff; }
+  #overlay { overflow-y: auto; justify-content: flex-start; padding: 2vh 0; }
+  #hud { position: fixed; top: 16px; left: 0; right: 0; text-align: center; color: #fff; pointer-events: none; text-shadow: 0 2px 4px #000; }
+  #task { font-size: 26px; font-weight: bold; }
+  #score { font-size: 22px; margin-top: 4px; }
+  #holding { position: fixed; bottom: 50px; left: 0; right: 0; text-align: center; color: #fff; font-size: 22px; text-shadow: 0 2px 4px #000; pointer-events: none; }
+  #controls { position: fixed; bottom: 14px; left: 0; right: 0; text-align: center; color: #ddd; font-size: 14px; pointer-events: none; text-shadow: 0 1px 3px #000; }
+  #cross { position: fixed; top: 50%; left: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border: 2px solid #fff; border-radius: 50%; pointer-events: none; opacity: .8; }
+  #msg { position: fixed; top: 38%; left: 0; right: 0; text-align: center; font-size: 34px; font-weight: bold; color: #fff; pointer-events: none; opacity: 0; transition: opacity .3s; text-shadow: 0 2px 6px #000; }
+</style>
+</head>
+<body>
+<div id="overlay"><h1>ECO-SORTER</h1><p id="loadmsg">Loading 3D engine…</p></div>
+<div id="hud">
+  <div id="task"></div>
+  <div id="score"></div>
+</div>
+<div id="cross"></div>
+<div id="msg"></div>
+<div id="holding"></div>
+<div id="controls">WASD: Move | SPACE: Jump | CLICK: Action | ESC: Menu / unlock mouse</div>
+
+<script>
+(function () {
+  // tries a local three.min.js first (fast if you add one next to index.html), then two CDNs
+  var urls = [
+    'three.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
+    'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js'
+  ];
+  var done = false, started = 0, t0 = Date.now();
+  var msg = document.getElementById('loadmsg');
+  var tick, failed = false;
+  window.addEventListener('error', function (e) {
+    if (!e.message) return; // ignore plain download failures (we try the next source)
+    var t = 'Error: ' + e.message + (e.lineno ? ' (line ' + e.lineno + ')' : '');
+    var m = document.getElementById('loadmsg');
+    if (m) { failed = true; m.textContent = t; return; }
+    var b = document.getElementById('errbar');
+    if (!b) { b = document.createElement('div'); b.id = 'errbar'; document.body.appendChild(b); }
+    b.style.cssText = 'position:fixed;left:0;right:0;bottom:0;background:#b71c1c;color:#fff;padding:6px 10px;font:13px sans-serif;z-index:99';
+    b.textContent = t;
+  }, true);
+  function run() {
+    if (done) return; done = true;
+    clearInterval(tick);
+    if (msg) msg.textContent = 'Starting game...';
+    setTimeout(function () {
+      var m = document.getElementById('loadmsg');
+      if (m && !failed) m.textContent = 'The game loaded but the menu did not appear. Press F12, open Console, and tell me the red text.';
+    }, 4000);
+    var s = document.createElement('script');
+    s.textContent = document.getElementById('game').textContent;
+    document.body.appendChild(s);
+  }
+  function start() {
+    if (done || started >= urls.length) return;
+    var s = document.createElement('script');
+    s.src = urls[started++];
+    s.onload = function () { if (window.THREE && window.THREE.Scene) run(); else start(); };
+    s.onerror = start;
+    document.head.appendChild(s);
+  }
+  tick = setInterval(function () {
+    if (done || failed) return;
+    var sec = Math.round((Date.now() - t0) / 1000);
+    msg.textContent = 'Loading 3D engine... ' + sec + 's';
+    if (sec > 0 && sec % 3 === 0) start(); // slow? also try the next source in parallel
+    if (sec >= 20) msg.innerHTML = 'Still loading. Check your connection, then <a href="" style="color:#7CFC9A">reload</a>.';
+  }, 1000);
+  start();
+})();
+</script>
+<script type="text/plain" id="game">
+// =====================================================
+//  SCENE
+// =====================================================
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 200);
+const EYE = 1.7;
+camera.rotation.order = 'YXZ';
+scene.add(camera);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x666666, 0.85));
+const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+sun.position.set(20, 40, 10);
+sun.castShadow = true;
+sun.shadow.camera.left = -40; sun.shadow.camera.right = 40;
+sun.shadow.camera.top = 40; sun.shadow.camera.bottom = -40;
+scene.add(sun);
+
+const groundMat = new THREE.MeshLambertMaterial({ color: 0x4caf50 });
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// ---- outdoor decorations (Mode 1) ----
+const outdoor = new THREE.Group();
+scene.add(outdoor);
+for (let i = 0; i < 40; i++) {
+  const a = (i / 40) * Math.PI * 2;
+  const r = 34 + Math.random() * 3;
+  const x = Math.cos(a) * r, z = Math.sin(a) * r;
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, 3, 8), new THREE.MeshLambertMaterial({ color: 0x6d4c2f }));
+  trunk.position.set(x, 1.5, z); trunk.castShadow = true;
+  const leaves = new THREE.Mesh(new THREE.SphereGeometry(2, 10, 8), new THREE.MeshLambertMaterial({ color: 0x2e7d32 }));
+  leaves.position.set(x, 4.2, z); leaves.castShadow = true;
+  outdoor.add(trunk, leaves);
+}
+
+// ---- indoor room (Mode 2) ----
+const indoor = new THREE.Group();
+scene.add(indoor);
+const ROOM = 20;
+const wallMat = new THREE.MeshLambertMaterial({ color: 0xf1e3c8 });
+[[0, -ROOM, 0], [0, ROOM, 0], [-ROOM, 0, Math.PI / 2], [ROOM, 0, Math.PI / 2]].forEach(([x, z, ry]) => {
+  const w = new THREE.Mesh(new THREE.BoxGeometry(ROOM * 2 + 1, 8, 0.6), wallMat);
+  w.position.set(x, 4, z); w.rotation.y = ry; indoor.add(w);
+});
+// a couple of fake furniture blocks for decoration
+const couch = new THREE.Mesh(new THREE.BoxGeometry(6, 1.2, 2.2), new THREE.MeshLambertMaterial({ color: 0x7b4a8c }));
+couch.position.set(-12, 0.6, -16); couch.castShadow = true; indoor.add(couch);
+const table = new THREE.Mesh(new THREE.BoxGeometry(4, 0.2, 2.5), new THREE.MeshLambertMaterial({ color: 0x8d6e63 }));
+table.position.set(12, 1, -15); table.castShadow = true; indoor.add(table);
+
+// =====================================================
+//  BINS (Mode 1)
+// =====================================================
+const BIN_TYPES = {
+  recycle: { label: 'RECYCLE BIN', color: 0x1e88e5 },
+  compost: { label: 'COMPOST BIN', color: 0x43a047 },
+  landfill: { label: 'GARBAGE BIN', color: 0x424242 },
+  ewaste: { label: 'E-WASTE BIN', color: 0x8e24aa },
+  hazard: { label: 'BATTERY BIN', color: 0xef6c00 },
+};
+const bins = [];
+const binGroup = new THREE.Group();
+scene.add(binGroup);
+function binLabelTex(text, bg) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = '#' + bg.toString(16).padStart(6, '0'); g.fillRect(0, 0, 256, 128);
+  g.fillStyle = '#fff'; g.font = 'bold 34px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  const words = text.split(' ');
+  g.fillText(words[0], 128, 45); g.fillText(words[1] || '', 128, 90);
+  return new THREE.CanvasTexture(c);
+}
+function addBin(type, x, z) {
+  const t = BIN_TYPES[type];
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.4, 2.4), new THREE.MeshLambertMaterial({ color: t.color }));
+  body.position.y = 1.2; body.castShadow = true;
+  const lid = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.2, 2.6), new THREE.MeshLambertMaterial({ color: 0x222222 }));
+  lid.position.y = 2.5;
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(2.1, 1.05), new THREE.MeshBasicMaterial({ map: binLabelTex(t.label, t.color) }));
+  sign.position.set(0, 1.3, 1.21);
+  g.add(body, lid, sign);
+  g.position.set(x, 0, z);
+  binGroup.add(g);
+  bins.push({ type, pos: new THREE.Vector3(x, 0, z) });
+}
+addBin('recycle', -12, -9);
+addBin('compost', -6, -11);
+addBin('landfill', 0, -12);
+addBin('ewaste', 6, -11);
+addBin('hazard', 12, -9);
+
+// =====================================================
+//  ITEMS  (name labels float above each one)
+// =====================================================
+function M(geo, color, opts) {
+  const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial(Object.assign({ color }, opts || {})));
+  m.castShadow = true; return m;
+}
+function B(geo, color) { // unlit bright material (for glowing things)
+  return new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color }));
+}
+function part(parent, mesh, x, y, z) { mesh.position.set(x, y, z); parent.add(mesh); return mesh; }
+
+const labelCache = {};
+function makeLabel(text, crazy) {
+  const key = text + crazy;
+  if (labelCache[key]) return labelCache[key].clone();
+  const c = document.createElement('canvas'); c.width = 640; c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = crazy ? 'rgba(90,40,0,0.85)' : 'rgba(0,0,0,0.65)';
+  const r = 24;
+  g.beginPath(); g.moveTo(r, 8); g.lineTo(640 - r, 8); g.quadraticCurveTo(632, 8, 632, r + 8);
+  g.lineTo(632, 120 - r); g.quadraticCurveTo(632, 120, 640 - r, 120); g.lineTo(r, 120);
+  g.quadraticCurveTo(8, 120, 8, 120 - r); g.lineTo(8, r + 8); g.quadraticCurveTo(8, 8, r, 8); g.fill();
+  g.fillStyle = crazy ? '#ffd740' : '#ffffff';
+  let size = 54;
+  g.font = 'bold ' + size + 'px Arial';
+  while (g.measureText(text).width > 590 && size > 20) { size -= 2; g.font = 'bold ' + size + 'px Arial'; }
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(text, 320, 66);
+  const tex = new THREE.CanvasTexture(c);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+  sp.scale.set(3.2, 0.64, 1);
+  labelCache[key] = sp;
+  return sp.clone();
+}
+
+const ITEM_DEFS = [
+  // ---- normal trash ----
+  { name: 'Plastic Bottle', bin: 'recycle', pts: 10, mass: 1, build: g => part(g, M(new THREE.CylinderGeometry(0.15, 0.15, 0.6, 12), 0x4fc3f7), 0, 0.3, 0) },
+  { name: 'Soda Can', bin: 'recycle', pts: 10, mass: 1, build: g => part(g, M(new THREE.CylinderGeometry(0.18, 0.18, 0.4, 12), 0xe53935), 0, 0.2, 0) },
+  { name: 'Old Newspaper', bin: 'recycle', pts: 10, mass: 1, build: g => part(g, M(new THREE.BoxGeometry(0.7, 0.08, 0.5), 0xeeeeee), 0, 0.05, 0) },
+  { name: 'Banana Peel', bin: 'compost', pts: 10, mass: 1, build: g => part(g, M(new THREE.BoxGeometry(0.5, 0.1, 0.2), 0xfdd835), 0, 0.06, 0) },
+  { name: 'Apple Core', bin: 'compost', pts: 10, mass: 1, build: g => part(g, M(new THREE.SphereGeometry(0.2, 10, 8), 0xa5391f), 0, 0.2, 0) },
+  { name: 'Candy Wrapper', bin: 'landfill', pts: 10, mass: 1, build: g => part(g, M(new THREE.BoxGeometry(0.4, 0.05, 0.2), 0xe91e63), 0, 0.04, 0) },
+  // ---- chips ----
+  { name: "Lay's Chips", bin: 'landfill', pts: 15, mass: 1.2, build: g => part(g, M(new THREE.BoxGeometry(0.5, 0.65, 0.14), 0xfbc02d), 0, 0.33, 0) },
+  { name: 'Doritos', bin: 'landfill', pts: 15, mass: 1.2, build: g => part(g, M(new THREE.BoxGeometry(0.5, 0.65, 0.14), 0xd32f2f), 0, 0.33, 0) },
+  { name: 'Cheetos', bin: 'landfill', pts: 15, mass: 1.2, build: g => part(g, M(new THREE.BoxGeometry(0.5, 0.65, 0.14), 0xff7043), 0, 0.33, 0) },
+  { name: 'Pringles Can', bin: 'landfill', pts: 15, mass: 1.3, build: g => { part(g, M(new THREE.CylinderGeometry(0.17, 0.17, 0.75, 14), 0xc62828), 0, 0.38, 0); part(g, M(new THREE.CylinderGeometry(0.18, 0.18, 0.06, 14), 0xeeeeee), 0, 0.77, 0); } },
+  // ---- sports ----
+  { name: 'Soccer Ball', bin: 'landfill', pts: 20, mass: 1.5, build: g => {
+      part(g, M(new THREE.SphereGeometry(0.35, 16, 12), 0xffffff), 0, 0.35, 0);
+      const ico = new THREE.IcosahedronGeometry(1, 0).attributes.position;
+      const seen = [];
+      for (let i = 0; i < ico.count; i++) {
+        const v = new THREE.Vector3(ico.getX(i), ico.getY(i), ico.getZ(i)).normalize();
+        if (seen.some(s => s.distanceTo(v) < 0.1)) continue;
+        seen.push(v);
+        part(g, M(new THREE.SphereGeometry(0.11, 8, 6), 0x111111), v.x * 0.34, 0.35 + v.y * 0.34, v.z * 0.34);
+      }
+  } },
+  { name: 'Basketball', bin: 'landfill', pts: 20, mass: 1.5, build: g => part(g, M(new THREE.SphereGeometry(0.38, 16, 12), 0xef6c00), 0, 0.38, 0) },
+  // ---- CRAZY ----
+  { name: 'Orange Lamborghini SVJ', crazy: true, bin: 'recycle', pts: 60, mass: 4, build: g => {
+      part(g, M(new THREE.BoxGeometry(2.2, 0.4, 1), 0xff7a00), 0, 0.4, 0);
+      part(g, M(new THREE.BoxGeometry(1.0, 0.3, 0.8), 0x1a1a1a), -0.1, 0.72, 0);
+      part(g, M(new THREE.BoxGeometry(0.15, 0.08, 1.1), 0xff7a00), -1.05, 0.7, 0);
+      [[-0.7, 0.5], [0.7, 0.5], [-0.7, -0.5], [0.7, -0.5]].forEach(([x, z]) => {
+        const w = M(new THREE.CylinderGeometry(0.25, 0.25, 0.2, 14), 0x111111);
+        w.rotation.x = Math.PI / 2; part(g, w, x, 0.25, z);
+      });
+  } },
+  { name: 'Big Hot Ionized Plasma', crazy: true, bin: 'landfill', pts: 60, mass: 3, build: g => {
+      part(g, B(new THREE.SphereGeometry(0.6, 20, 16), 0xff5252), 0, 0.9, 0);
+      const halo = new THREE.Mesh(new THREE.SphereGeometry(0.9, 20, 16), new THREE.MeshBasicMaterial({ color: 0xffab40, transparent: true, opacity: 0.35 }));
+      part(g, halo, 0, 0.9, 0);
+  } },
+  { name: 'United States Spaceship', crazy: true, bin: 'recycle', pts: 80, mass: 5, build: g => {
+      const body = M(new THREE.CylinderGeometry(0.4, 0.4, 2, 14), 0xeeeeee); body.rotation.z = Math.PI / 2; part(g, body, 0, 0.8, 0);
+      const nose = M(new THREE.ConeGeometry(0.4, 0.8, 14), 0xd32f2f); nose.rotation.z = -Math.PI / 2; part(g, nose, 1.4, 0.8, 0);
+      part(g, M(new THREE.BoxGeometry(0.7, 0.06, 2.2), 0x1e3a8a), -0.5, 0.8, 0);
+      part(g, M(new THREE.BoxGeometry(0.5, 0.7, 0.06), 0x1e3a8a), -0.9, 1.2, 0);
+      part(g, M(new THREE.SphereGeometry(0.22, 10, 8), 0x4fc3f7), 0.5, 1.1, 0);
+  } },
+  { name: 'Giant Rubber Duck', crazy: true, bin: 'landfill', pts: 50, mass: 3, build: g => {
+      part(g, M(new THREE.SphereGeometry(0.6, 14, 12), 0xffeb3b), 0, 0.6, 0);
+      part(g, M(new THREE.SphereGeometry(0.35, 12, 10), 0xffeb3b), 0.35, 1.2, 0);
+      part(g, M(new THREE.BoxGeometry(0.3, 0.1, 0.25), 0xff9800), 0.7, 1.15, 0);
+  } },
+  // ---- nerdy / e-waste ----
+  { name: 'Old Keyboard', bin: 'ewaste', pts: 20, mass: 1.3, build: g => part(g, M(new THREE.BoxGeometry(1, 0.1, 0.35), 0x37474f), 0, 0.06, 0) },
+  { name: 'Dead Laptop', bin: 'ewaste', pts: 25, mass: 1.6, build: g => { part(g, M(new THREE.BoxGeometry(0.8, 0.06, 0.55), 0x90a4ae), 0, 0.04, 0); const s = M(new THREE.BoxGeometry(0.8, 0.55, 0.04), 0x263238); s.rotation.x = -0.3; part(g, s, 0, 0.32, -0.3); } },
+  { name: 'Computer Mouse', bin: 'ewaste', pts: 15, mass: 1, build: g => { const m = M(new THREE.SphereGeometry(0.18, 12, 8), 0xeeeeee); m.scale.set(0.8, 0.5, 1.3); part(g, m, 0, 0.1, 0); } },
+  { name: 'Cracked Phone', bin: 'ewaste', pts: 20, mass: 1, build: g => part(g, M(new THREE.BoxGeometry(0.22, 0.04, 0.42), 0x212121), 0, 0.04, 0) },
+  { name: 'Floppy Disk', bin: 'ewaste', pts: 20, mass: 1, build: g => part(g, M(new THREE.BoxGeometry(0.35, 0.03, 0.35), 0x1565c0), 0, 0.03, 0) },
+  { name: 'Raspberry Pi', bin: 'ewaste', pts: 25, mass: 1, build: g => { part(g, M(new THREE.BoxGeometry(0.45, 0.03, 0.3), 0x2e7d32), 0, 0.03, 0); part(g, M(new THREE.BoxGeometry(0.12, 0.05, 0.12), 0xbdbdbd), 0.05, 0.07, 0); } },
+  { name: 'RTX Graphics Card', bin: 'ewaste', pts: 30, mass: 1.8, build: g => { part(g, M(new THREE.BoxGeometry(0.9, 0.2, 0.35), 0x212121), 0, 0.12, 0); [-0.25, 0.25].forEach(x => part(g, M(new THREE.CylinderGeometry(0.14, 0.14, 0.04, 14), 0x76ff03), x, 0.24, 0)); } },
+  { name: 'Old CRT Monitor', bin: 'ewaste', pts: 30, mass: 2.2, build: g => { part(g, M(new THREE.BoxGeometry(0.8, 0.7, 0.8), 0xd7ccc8), 0, 0.35, 0); part(g, B(new THREE.PlaneGeometry(0.6, 0.5), 0x00e676), 0, 0.38, 0.41); } },
+  { name: 'AA Batteries', bin: 'hazard', pts: 20, mass: 1, build: g => { [-0.1, 0.1].forEach(z => { const b = M(new THREE.CylinderGeometry(0.07, 0.07, 0.35, 10), 0x43a047); b.rotation.z = Math.PI / 2; part(g, b, 0, 0.07, z); }); } },
+  { name: 'Swollen Lithium Battery', bin: 'hazard', pts: 25, mass: 1.2, build: g => part(g, M(new THREE.BoxGeometry(0.5, 0.12, 0.3), 0xf9a825), 0, 0.07, 0) },
+  { name: "Rubik's Cube", bin: 'landfill', pts: 20, mass: 1, build: g => part(g, M(new THREE.BoxGeometry(0.4, 0.4, 0.4), 0xffeb3b), 0, 0.2, 0) },
+  { name: 'Energy Drink Can', bin: 'recycle', pts: 15, mass: 1, build: g => part(g, M(new THREE.CylinderGeometry(0.16, 0.16, 0.5, 12), 0x00bcd4), 0, 0.25, 0) },
+  // ---- CRAZY nerd stuff ----
+  { name: 'Quantum Computer', crazy: true, bin: 'ewaste', pts: 90, mass: 5, build: g => { for (let i = 0; i < 4; i++) part(g, M(new THREE.CylinderGeometry(0.7 - i * 0.12, 0.7 - i * 0.12, 0.08, 16), 0xffc107), 0, 1.4 - i * 0.35, 0); part(g, M(new THREE.CylinderGeometry(0.05, 0.05, 1.5, 8), 0xffd54f), 0, 0.75, 0); } },
+  { name: 'Server Rack 9000', crazy: true, bin: 'ewaste', pts: 80, mass: 5, build: g => { part(g, M(new THREE.BoxGeometry(0.9, 1.8, 0.8), 0x263238), 0, 0.9, 0); for (let i = 0; i < 6; i++) part(g, B(new THREE.BoxGeometry(0.7, 0.04, 0.02), i % 2 ? 0x00e676 : 0x40c4ff), 0, 0.3 + i * 0.28, 0.41); } },
+  { name: 'Cursed Floppy of Doom', crazy: true, bin: 'hazard', pts: 70, mass: 3, build: g => { part(g, M(new THREE.BoxGeometry(0.9, 0.08, 0.9), 0x4a148c), 0, 0.6, 0); part(g, B(new THREE.SphereGeometry(0.15, 10, 8), 0xff1744), 0, 0.8, 0); } },
+];
+
+// =====================================================
+//  GAME STATE
+// =====================================================
+let mode = 0;          // 0 menu, 1 eco, 2 vacuum
+let started = false;   // a game is in progress (for resume)
+let ended = false;
+let score = 0, timeLeft = 60;
+let held = null;
+let vacOn = false;
+let limit = 35;
+const items = [];
+let timed = false, vacIdx = 0;
+let pname = 'Player' + Math.floor(Math.random() * 90 + 10), avIdx = 0;
+const myId = Math.random().toString(36).slice(2, 7);
+let itemSeq = 0, rng = Math.random;
+function mulberry(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function itemCat(d) { return d.crazy ? 'crazy' : (d.bin === 'ewaste' || d.bin === 'hazard') ? 'tech' : 'trash'; }
+
+const overlay = document.getElementById('overlay');
+const taskEl = document.getElementById('task');
+const scoreEl = document.getElementById('score');
+const holdEl = document.getElementById('holding');
+const msgEl = document.getElementById('msg');
+
+function flash(text, color) {
+  msgEl.textContent = text; msgEl.style.color = color; msgEl.style.opacity = 1;
+  clearTimeout(flash.t); flash.t = setTimeout(() => msgEl.style.opacity = 0, 1100);
+}
+
+function pickDef() {
+  let i = Math.floor(rng() * ITEM_DEFS.length);
+  if (ITEM_DEFS[i].crazy && rng() < 0.5) i = Math.floor(rng() * ITEM_DEFS.length);
+  return i;
+}
+
+function spawnItem(data, announce) {
+  data = data || { di: pickDef(), id: myId + '_' + (itemSeq++) };
+  const def = ITEM_DEFS[data.di];
+  const group = new THREE.Group();
+  const body = new THREE.Group();
+  def.build(body);
+  group.add(body);
+  const box = new THREE.Box3().setFromObject(body);
+  const h = box.max.y;
+  const label = makeLabel(def.name, !!def.crazy);
+  label.position.y = h + 0.6;
+  group.add(label);
+
+  let x = data.x, z = data.z, tries = 0;
+  if (x === undefined) {
+    do {
+      x = (rng() * 2 - 1) * (limit - 3);
+      z = (rng() * 2 - 1) * (limit - 3);
+      tries++;
+    } while (mode === 1 && tries < 30 && bins.some(b => Math.hypot(b.pos.x - x, b.pos.z - z) < 5));
+  }
+  group.position.set(x, 0, z);
+  body.rotation.y = (data.id.length * 1.7) % 6.28;
+  scene.add(group);
+  items.push({ def, group, body, label, h, id: data.id });
+}
+
+function clearItems() {
+  items.forEach(it => scene.remove(it.group));
+  items.length = 0;
+  if (held) { camera.remove(held.group); held = null; }
+}
+
+function updateHUD() {
+  if (mode === 1) {
+    scoreEl.textContent = 'Score: ' + score;
+    if (held) {
+      holdEl.textContent = 'Holding: ' + held.def.name;
+      taskEl.textContent = 'THIS GOES IN THE ' + BIN_TYPES[held.def.bin].label + '!';
+    } else {
+      holdEl.textContent = 'Empty Handed';
+      taskEl.textContent = 'Find some trash!';
+    }
+  } else if (mode === 2) {
+    taskEl.textContent = vacTypes[vacIdx].name + ' - sucks up ' + vacTypes[vacIdx].what + ' (keys 1/2/3 switch)';
+    scoreEl.textContent = 'Score: ' + score + (timed ? '   |   Time: ' + Math.max(0, Math.ceil(timeLeft)) : '');
+    holdEl.textContent = '';
+  }
+}
+
+// ---------- vacuum model on camera ----------
+const vac = new THREE.Group();
+const vacBody = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.3, 0.5), new THREE.MeshLambertMaterial({ color: 0xd32f2f }));
+vacBody.position.set(0, -0.1, 0.1);
+vac.add(vacBody);
+const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.8, 12), new THREE.MeshLambertMaterial({ color: 0x555555 }));
+tube.rotation.x = Math.PI / 2; tube.position.set(0, -0.05, -0.4); vac.add(tube);
+const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.1, 0.12, 14), new THREE.MeshLambertMaterial({ color: 0x222222 }));
+nozzle.rotation.x = Math.PI / 2; nozzle.position.set(0, -0.05, -0.85); vac.add(nozzle);
+const coneGeo = new THREE.ConeGeometry(2.6, 7, 20, 1, true); coneGeo.rotateX(Math.PI / 2);
+const suction = new THREE.Mesh(coneGeo, new THREE.MeshBasicMaterial({ color: 0x80d8ff, transparent: true, opacity: 0.14, depthWrite: false, side: THREE.DoubleSide }));
+suction.position.set(0, -0.05, -4.3); suction.visible = false; vac.add(suction);
+vac.position.set(0.55, -0.55, -0.6);
+vac.visible = false;
+camera.add(vac);
+
+const vacTypes = [
+  { name: 'Trash Vac', cat: 'trash', what: 'everyday trash', color: 0xd32f2f, glow: 0x80d8ff },
+  { name: 'Tech Vac', cat: 'tech', what: 'e-waste & batteries', color: 0x8e24aa, glow: 0xe1bee7 },
+  { name: 'Mega Vac', cat: 'crazy', what: 'CRAZY stuff', color: 0xffb300, glow: 0xffe082 },
+];
+let lastHint = 0;
+function applyVac() {
+  vacBody.material.color.set(vacTypes[vacIdx].color);
+  suction.material.color.set(vacTypes[vacIdx].glow);
+  updateHUD();
+}
+addEventListener('keydown', e => {
+  if (mode !== 2 || !(document.pointerLockElement || fallback)) return;
+  const i = ['Digit1', 'Digit2', 'Digit3'].indexOf(e.code);
+  if (i >= 0) { vacIdx = i; applyVac(); flash(vacTypes[i].name, '#ffffff'); }
+});
+
+// =====================================================
+//  MODES
+// =====================================================
+function startMode(m, t) {
+  clearItems();
+  mode = m; started = true; ended = false; score = 0; timeLeft = 60; vacOn = false;
+  timed = !!t; vacIdx = 0; applyVac();
+  camera.rotation.set(0, 0, 0);
+  vy = 0;
+  if (m === 1) {
+    limit = 35;
+    scene.background = new THREE.Color(0x9fd8ff);
+    scene.fog = new THREE.Fog(0x9fd8ff, 30, 80);
+    groundMat.color.set(0x4caf50);
+    outdoor.visible = true; binGroup.visible = true; indoor.visible = false; vac.visible = false;
+    camera.position.set(0, EYE, 12);
+    for (let i = 0; i < 20; i++) spawnItem({ di: pickDef(), id: 'i' + i });
+  } else {
+    limit = ROOM - 1.5;
+    scene.background = new THREE.Color(0xcfd8dc);
+    scene.fog = new THREE.Fog(0xcfd8dc, 25, 70);
+    groundMat.color.set(0xc9a27a);
+    outdoor.visible = false; binGroup.visible = false; indoor.visible = true; vac.visible = true;
+    camera.position.set(0, EYE, 12);
+    for (let i = 0; i < 22; i++) spawnItem({ di: pickDef(), id: 'i' + i });
+  }
+  updateHUD();
+  document.getElementById('controls').textContent = m === 1
+    ? 'WASD: Move | SPACE: Jump | CLICK: Pick up / drop in bin | SCROLL: Zoom 1st/3rd person | ESC: Menu'
+    : 'WASD: Move | SPACE: Jump | HOLD CLICK: Vacuum | 1/2/3: Switch vacuum | SCROLL: Zoom 1st/3rd person | ESC: Menu';
+  lock();
+}
+
+function showMenu(sub) {
+  overlay.style.display = 'flex';
+  overlay.innerHTML =
+    '<h1>ECO-SORTER</h1><p>' + (sub || 'Pick a minigame!') + '</p>' +
+    (started && !ended ? '<button class="btn" id="bres">&#9654; RESUME</button>' : '') +
+    '<button class="btn" id="b1">1. ECO PICK UP</button>' +
+    '<button class="btn" id="b2">2. VACUUM CLEANER (no timer)</button>' +
+    '<button class="btn" id="b3">2b. VACUUM - 60s TIMED</button>' +
+    '<div class="row"><b>Device:</b> <button class="sm' + (!mobile ? ' on' : '') + '" id="dpc">PC / Computer</button><button class="sm' + (mobile ? ' on' : '') + '" id="dmob">Mobile</button></div>' +
+    '<div class="row"><b>Avatar:</b> ' + AV_NAMES.map((n, i) => '<button class="sm' + (i === avIdx ? ' on' : '') + '" data-av="' + i + '">' + n + '</button>').join('') + '</div>' +
+    '<div class="row">Name: <input id="pname" maxlength="12" value="' + pname + '"></div>' +
+    '<p style="font-size:14px;opacity:.7;margin-top:10px">Eco Pick Up: sort items into the right bin (trash, e-waste, batteries...).<br>Vacuum: press 1/2/3 to switch between the Trash, Tech and Mega vacuum.</p>';
+  document.getElementById('b1').onclick = () => go(1, false);
+  document.getElementById('dpc').onclick = () => { readMenu(); mobile = false; showMenu(sub); };
+  document.getElementById('dmob').onclick = () => { readMenu(); mobile = true; showMenu(sub); };
+  document.getElementById('b2').onclick = () => go(2, false);
+  document.getElementById('b3').onclick = () => go(2, true);
+  overlay.querySelectorAll('[data-av]').forEach(b => b.onclick = () => { readMenu(); avIdx = +b.dataset.av; showMenu(sub); });
+  const r = document.getElementById('bres');
+  if (r) r.onclick = () => lock();
+}
+
+function endGame() {
+  ended = true; vacOn = false; suction.visible = false;
+  fallback = false;
+  document.exitPointerLock();
+  showMenu("TIME'S UP! You vacuumed up " + score + ' points!');
+}
+
+// ---------- Mode 1 interaction ----------
+function flatDist(a, b) { return Math.hypot(a.x - b.x, a.z - b.z); }
+
+function interactEco() {
+  if (!held) {
+    let best = null, bd = 4;
+    for (const it of items) {
+      const d = flatDist(camera.position, it.group.position);
+      if (d < bd) { bd = d; best = it; }
+    }
+    if (best) {
+      held = best;
+      items.splice(items.indexOf(best), 1);
+      best.label.visible = false;
+      camera.add(best.group);
+      best.group.scale.setScalar(best.h > 1 ? 0.35 : 0.8);
+      best.group.position.set(0.55, -0.55, -1.3);
+      best.body.rotation.set(0.2, 0.6, 0);
+      updateHUD();
+    }
+  } else {
+    let best = null, bd = 4.5;
+    for (const b of bins) {
+      const d = flatDist(camera.position, b.pos);
+      if (d < bd) { bd = d; best = b; }
+    }
+    if (best) {
+      if (best.type === held.def.bin) {
+        const gain = held.def.crazy ? 3 : 1;
+        score += gain; flash('Correct! +' + gain, '#7CFC9A');
+      } else {
+        score = Math.max(0, score - 1);
+        flash('Nope! ' + held.def.name + ' goes in the ' + BIN_TYPES[held.def.bin].label, '#ff6b6b');
+      }
+      camera.remove(held.group);
+      held = null;
+      setTimeout(() => { if (mode === 1) { spawnItem(null, true); updateHUD(); } }, 1500);
+      updateHUD();
+    }
+  }
+}
+
+// ---------- Mode 2 vacuum ----------
+const _fwd = new THREE.Vector3(), _to = new THREE.Vector3(), _src = new THREE.Vector3();
+function updateVacuum(dt) {
+  suction.visible = vacOn;
+  if (vacOn) {
+    suction.scale.setScalar(1 + Math.sin(performance.now() / 60) * 0.04);
+    camera.getWorldDirection(_fwd);
+    _src.copy(camera.position); _src.y -= 0.4;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const it = items[i];
+      _to.copy(it.group.position); _to.y += it.h * 0.5; _to.sub(_src);
+      const dist = _to.length();
+      if (itemCat(it.def) !== vacTypes[vacIdx].cat) {
+        if (dist < 3 && performance.now() - lastHint > 2500) {
+          lastHint = performance.now();
+          const k = vacTypes.findIndex(v => v.cat === itemCat(it.def));
+          flash('Wrong vacuum! Press ' + (k + 1) + ' for the ' + vacTypes[k].name, '#ffffff');
+        }
+        continue;
+      }
+      if (dist < 1.3) {
+        score += it.def.pts;
+        flash('+' + it.def.pts + ' ' + it.def.name + (it.def.crazy ? '!!' : ''), it.def.crazy ? '#ffd740' : '#80d8ff');
+        scene.remove(it.group); items.splice(i, 1);
+        setTimeout(() => { if (mode === 2 && !ended) spawnItem(null, true); }, 800);
+        continue;
+      }
+      _to.divideScalar(dist);
+      if (dist < 9 && _to.dot(_fwd) > 0.8) {
+        const speed = (13 / it.def.mass) * (1 + (9 - dist) / 9);
+        it.group.position.addScaledVector(_to, -speed * dt);
+        it.body.rotation.y += dt * 10;
+        it.pulled = true;
+      }
+    }
+  }
+  // items fall back to the floor when not being sucked
+  for (const it of items) {
+    if (!it.pulled && it.group.position.y > 0) it.group.position.y = Math.max(0, it.group.position.y - 9 * dt);
+    it.pulled = false;
+  }
+}
+
+// =====================================================
+//  CONTROLS
+// =====================================================
+const keys = {};
+let fallback = false; // used when the browser blocks mouse lock
+function enableFallback() {
+  if (fallback || document.pointerLockElement) return;
+  fallback = true;
+  overlay.style.display = 'none';
+  flash('Mouse lock blocked - use ARROW KEYS to look around', '#ffffff');
+}
+function lock() {
+  fallback = false;
+  if (mobile) { fallback = true; overlay.style.display = 'none'; return; }
+  try {
+    const p = renderer.domElement.requestPointerLock();
+    if (p && p.catch) p.catch(enableFallback);
+  } catch (e) { enableFallback(); }
+  setTimeout(() => { if (!document.pointerLockElement) enableFallback(); }, 700);
+}
+addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'Space') e.preventDefault();
+  if (e.code.indexOf('Arrow') === 0) e.preventDefault();
+  if (e.code === 'Escape' && fallback) { fallback = false; vacOn = false; showMenu(started ? 'Paused' : null); }
+});
+addEventListener('keyup', e => keys[e.code] = false);
+
+document.addEventListener('pointerlockchange', () => {
+  if (document.pointerLockElement) overlay.style.display = 'none';
+  else { vacOn = false; if (!ended) showMenu(started ? 'Paused' : null); }
+});
+addEventListener('mousemove', e => {
+  if (!document.pointerLockElement) return;
+  camera.rotation.y -= e.movementX * 0.002;
+  camera.rotation.x -= e.movementY * 0.002;
+  camera.rotation.x = Math.max(-1.4, Math.min(1.4, camera.rotation.x));
+});
+addEventListener('mousedown', () => {
+  if (mobile) return;
+  if (!(document.pointerLockElement || fallback)) return;
+  if (mode === 1) interactEco();
+  else if (mode === 2) vacOn = true;
+});
+addEventListener('mouseup', () => { vacOn = false; });
+
+let vy = 0, onGround = true;
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const locked = !!document.pointerLockElement || fallback;
+
+  if (locked && mode) {
+    if (keys.ArrowLeft) camera.rotation.y += 2 * dt;
+    if (keys.ArrowRight) camera.rotation.y -= 2 * dt;
+    if (keys.ArrowUp) camera.rotation.x = Math.min(1.4, camera.rotation.x + 1.5 * dt);
+    if (keys.ArrowDown) camera.rotation.x = Math.max(-1.4, camera.rotation.x - 1.5 * dt);
+    const speed = 7;
+    const yaw = camera.rotation.y;
+    const fwd = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+    const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+    const move = new THREE.Vector3();
+    if (keys.KeyW) move.add(fwd);
+    if (keys.KeyS) move.sub(fwd);
+    if (keys.KeyD) move.add(right);
+    if (keys.KeyA) move.sub(right);
+    if (Math.hypot(joy.x, joy.y) > 0.15) { move.addScaledVector(fwd, -joy.y); move.addScaledVector(right, joy.x); }
+    if (move.lengthSq() > 0) move.normalize().multiplyScalar(speed * dt);
+    camera.position.add(move);
+    camera.position.x = Math.max(-limit, Math.min(limit, camera.position.x));
+    camera.position.z = Math.max(-limit, Math.min(limit, camera.position.z));
+
+    if (keys.Space && onGround) { vy = 7; onGround = false; }
+    vy -= 20 * dt;
+    camera.position.y += vy * dt;
+    if (camera.position.y <= EYE) { camera.position.y = EYE; vy = 0; onGround = true; }
+
+    if (mode === 2 && !ended) {
+      if (timed) timeLeft -= dt;
+      updateVacuum(dt);
+      updateHUD();
+      if (timed && timeLeft <= 0) endGame();
+    }
+  }
+
+  // spin items (unless being sucked) so they're easy to spot
+  if (mode) for (const it of items) if (!it.pulled) it.body.rotation.y += dt * 0.8;
+
+  if (mode) {
+    if (!selfAv || selfAv.userData.kind !== avIdx || selfAv.userData.name !== pname) {
+      if (selfAv) scene.remove(selfAv);
+      selfAv = buildAvatar(avIdx);
+      selfAv.userData.kind = avIdx; selfAv.userData.name = pname;
+      const tg = makeLabel(pname, false); tg.position.y = 2.5; selfAv.add(tg);
+      scene.add(selfAv);
+    }
+    camDist += (camTarget - camDist) * 0.15;
+    selfAv.visible = camDist > 0.7;
+    selfAv.position.set(camera.position.x, camera.position.y - EYE, camera.position.z);
+    selfAv.rotation.y = camera.rotation.y + Math.PI;
+    const op = camera.position.clone(), dir = new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    camera.position.addScaledVector(dir, -camDist);
+    camera.position.y = Math.max(camera.position.y + camDist * 0.18, camDist > 0.7 ? 0.5 : 0);
+    camera.position.x = Math.max(-limit - 1, Math.min(limit + 1, camera.position.x));
+    camera.position.z = Math.max(-limit - 1, Math.min(limit + 1, camera.position.z));
+    renderer.render(scene, camera);
+    camera.position.copy(op);
+  } else {
+    if (selfAv) selfAv.visible = false;
+    renderer.render(scene, camera);
+  }
+}
+
+// =====================================================
+//  AVATARS
+// =====================================================
+let mobile = navigator.maxTouchPoints > 0 && matchMedia('(pointer: coarse)').matches;
+const AV_NAMES = ['Mouse', 'Cat', 'Burger Buddy'];
+
+function buildAvatar(kind) {
+  const g = new THREE.Group();
+  const col = [0x9e9e9e, 0xff9800, 0xd7a35a][kind] || 0x9e9e9e;
+  const body = M(new THREE.SphereGeometry(0.5, 14, 12), col); body.scale.y = 1.3; part(g, body, 0, 0.7, 0);
+  part(g, M(new THREE.SphereGeometry(0.38, 14, 12), col), 0, 1.6, 0);
+  [-0.12, 0.12].forEach(x => part(g, M(new THREE.SphereGeometry(0.06, 8, 6), 0x111111), x, 1.65, 0.34));
+  if (kind === 0) {
+    [-0.32, 0.32].forEach(x => { const e = M(new THREE.CylinderGeometry(0.22, 0.22, 0.06, 14), 0xf8bbd0); e.rotation.x = Math.PI / 2; part(g, e, x, 1.9, 0); });
+    part(g, M(new THREE.SphereGeometry(0.07, 8, 6), 0xf06292), 0, 1.58, 0.38);
+  } else if (kind === 1) {
+    [-0.22, 0.22].forEach(x => part(g, M(new THREE.ConeGeometry(0.14, 0.3, 4), col), x, 1.95, 0));
+    part(g, M(new THREE.SphereGeometry(0.06, 8, 6), 0xf06292), 0, 1.55, 0.38);
+  } else {
+    part(g, M(new THREE.SphereGeometry(0.45, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), 0xe0a050), 0, 1.85, 0);
+    part(g, M(new THREE.CylinderGeometry(0.46, 0.46, 0.12, 14), 0x5d4037), 0, 1.82, 0);
+  }
+  const tail = M(new THREE.CylinderGeometry(0.04, 0.04, 0.9, 6), kind === 0 ? 0xf8bbd0 : col);
+  tail.rotation.x = Math.PI / 2.5; part(g, tail, 0, 0.5, -0.65);
+  return g;
+}
+
+let selfAv = null, camDist = 4.5, camTarget = 4.5;
+function readMenu() {
+  const n = document.getElementById('pname');
+  if (n) pname = (n.value.replace(/[^\w \-]/g, '') || 'Player').slice(0, 12);
+}
+function go(m, t) { readMenu(); startMode(m, t); }
+
+// =====================================================
+//  MOBILE CONTROLS (touch joystick + buttons)
+// =====================================================
+const joy = { x: 0, y: 0 };
+const tUI = document.createElement('div');
+tUI.style.cssText = 'position:fixed;inset:0;display:none;pointer-events:none;z-index:5;touch-action:none;user-select:none;-webkit-user-select:none';
+document.body.appendChild(tUI);
+function tBtn(txt, css) {
+  const b = document.createElement('div');
+  b.textContent = txt;
+  b.style.cssText = 'position:absolute;pointer-events:auto;display:flex;align-items:center;justify-content:center;color:#fff;font:bold 18px Trebuchet MS,sans-serif;background:rgba(0,0,0,.45);border:3px solid rgba(255,255,255,.6);border-radius:50%;touch-action:none;user-select:none;-webkit-user-select:none;' + css;
+  tUI.appendChild(b); return b;
+}
+function onTouch(el, down, up) {
+  el.addEventListener('touchstart', e => { e.preventDefault(); down(); }, { passive: false });
+  if (up) { el.addEventListener('touchend', up); el.addEventListener('touchcancel', up); }
+}
+const jBase = tBtn('', 'left:24px;bottom:30px;width:130px;height:130px;');
+const jKnob = document.createElement('div');
+jKnob.style.cssText = 'width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,.7);pointer-events:none;';
+jBase.appendChild(jKnob);
+let jId = null;
+function jMove(t) {
+  const r = jBase.getBoundingClientRect();
+  let dx = t.clientX - (r.left + r.width / 2), dy = t.clientY - (r.top + r.height / 2);
+  const m = Math.hypot(dx, dy), max = 50;
+  if (m > max) { dx = dx / m * max; dy = dy / m * max; }
+  joy.x = dx / max; joy.y = dy / max;
+  jKnob.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+}
+jBase.addEventListener('touchstart', e => { e.preventDefault(); const t = e.changedTouches[0]; jId = t.identifier; jMove(t); }, { passive: false });
+jBase.addEventListener('touchmove', e => { e.preventDefault(); for (const t of e.changedTouches) if (t.identifier === jId) jMove(t); }, { passive: false });
+const jEnd = e => { for (const t of e.changedTouches) if (t.identifier === jId) { jId = null; joy.x = joy.y = 0; jKnob.style.transform = ''; } };
+jBase.addEventListener('touchend', jEnd); jBase.addEventListener('touchcancel', jEnd);
+
+const aBtn = tBtn('GRAB', 'right:24px;bottom:40px;width:110px;height:110px;background:rgba(46,158,79,.75);');
+onTouch(aBtn, () => { if (mode === 1) interactEco(); else if (mode === 2) vacOn = true; }, () => { vacOn = false; });
+const jumpBtn = tBtn('JUMP', 'right:150px;bottom:30px;width:76px;height:76px;font-size:14px;');
+onTouch(jumpBtn, () => { keys.Space = true; }, () => { keys.Space = false; });
+const menuBtn = tBtn('\u2630', 'left:12px;top:12px;width:48px;height:48px;border-radius:12px;');
+onTouch(menuBtn, () => { fallback = false; vacOn = false; showMenu(started && !ended ? 'Paused' : null); });
+const vacBtns = [0, 1, 2].map(i => {
+  const b = tBtn(String(i + 1), 'left:calc(50% + ' + (i * 62 - 87) + 'px);bottom:20px;width:50px;height:50px;');
+  onTouch(b, () => { vacIdx = i; applyVac(); flash(vacTypes[i].name, '#ffffff'); });
+  return b;
+});
+
+addEventListener('wheel', e => {
+  if (!(document.pointerLockElement || fallback)) return;
+  camTarget = Math.max(0, Math.min(8, camTarget + e.deltaY * 0.004));
+  if (camTarget < 0.4) camTarget = 0;
+}, { passive: true });
+const camBtn = tBtn('1P / 3P', 'right:24px;top:70px;width:60px;height:60px;font-size:13px;');
+onTouch(camBtn, () => { camTarget = camTarget > 0.5 ? 0 : 4.5; });
+
+let lookId = null, lx = 0, ly = 0;
+const cv = renderer.domElement;
+cv.style.touchAction = 'none';
+cv.addEventListener('touchstart', e => { if (!mobile || lookId !== null) return; const t = e.changedTouches[0]; lookId = t.identifier; lx = t.clientX; ly = t.clientY; }, { passive: true });
+cv.addEventListener('touchmove', e => {
+  e.preventDefault();
+  for (const t of e.changedTouches) if (t.identifier === lookId) {
+    camera.rotation.y -= (t.clientX - lx) * 0.006;
+    camera.rotation.x = Math.max(-1.4, Math.min(1.4, camera.rotation.x - (t.clientY - ly) * 0.006));
+    lx = t.clientX; ly = t.clientY;
+  }
+}, { passive: false });
+const lEnd = e => { for (const t of e.changedTouches) if (t.identifier === lookId) lookId = null; };
+cv.addEventListener('touchend', lEnd); cv.addEventListener('touchcancel', lEnd);
+
+setInterval(() => {
+  tUI.style.display = (mobile && mode && overlay.style.display === 'none') ? 'block' : 'none';
+  vacBtns.forEach(b => b.style.display = mode === 2 ? 'flex' : 'none');
+  aBtn.textContent = mode === 2 ? 'SUCK' : (held ? 'DROP' : 'GRAB');
+  document.getElementById('controls').style.display = mobile ? 'none' : 'block';
+}, 150);
+
+scene.background = new THREE.Color(0x9fd8ff);
+showMenu();
+animate();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
